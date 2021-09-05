@@ -1,11 +1,92 @@
 import requests
 import json
-import searchbyagents as agents
 import openpyxl
 import api_connection as api
 import pandas as pd
-import time
+import datetime
+from datetime import datetime
+from openpyxl import load_workbook
+import os
 
+def append_df_to_excel(filename, df, sheet_name='Sheet1', startrow=None,
+                       truncate_sheet=False, 
+                       **to_excel_kwargs):
+    """
+    Append a DataFrame [df] to existing Excel file [filename]
+    into [sheet_name] Sheet.
+    If [filename] doesn't exist, then this function will create it.
+
+    @param filename: File path or existing ExcelWriter
+                     (Example: '/path/to/file.xlsx')
+    @param df: DataFrame to save to workbook
+    @param sheet_name: Name of sheet which will contain DataFrame.
+                       (default: 'Sheet1')
+    @param startrow: upper left cell row to dump data frame.
+                     Per default (startrow=None) calculate the last row
+                     in the existing DF and write to the next row...
+    @param truncate_sheet: truncate (remove and recreate) [sheet_name]
+                           before writing DataFrame to Excel file
+    @param to_excel_kwargs: arguments which will be passed to `DataFrame.to_excel()`
+                            [can be a dictionary]
+    @return: None
+
+    Usage examples:
+
+    >>> append_df_to_excel('d:/temp/test.xlsx', df)
+
+    >>> append_df_to_excel('d:/temp/test.xlsx', df, header=None, index=False)
+
+    >>> append_df_to_excel('d:/temp/test.xlsx', df, sheet_name='Sheet2',
+                           index=False)
+
+    >>> append_df_to_excel('d:/temp/test.xlsx', df, sheet_name='Sheet2', 
+                           index=False, startrow=25)
+
+    (c) [MaxU](https://stackoverflow.com/users/5741205/maxu?tab=profile)
+    """
+    # Excel file doesn't exist - saving and exiting
+    if not os.path.isfile(filename):
+        df.to_excel(
+            filename,
+            sheet_name=sheet_name, 
+            startrow=startrow if startrow is not None else 0, 
+            **to_excel_kwargs)
+        return
+    
+    # ignore [engine] parameter if it was passed
+    if 'engine' in to_excel_kwargs:
+        to_excel_kwargs.pop('engine')
+
+    writer = pd.ExcelWriter(filename, engine='openpyxl', mode='a')
+
+    # try to open an existing workbook
+    writer.book = load_workbook(filename)
+    
+    # get the last row in the existing Excel sheet
+    # if it was not specified explicitly
+    if startrow is None and sheet_name in writer.book.sheetnames:
+        startrow = writer.book[sheet_name].max_row
+
+    # truncate sheet
+    if truncate_sheet and sheet_name in writer.book.sheetnames:
+        # index of [sheet_name] sheet
+        idx = writer.book.sheetnames.index(sheet_name)
+        # remove [sheet_name]
+        writer.book.remove(writer.book.worksheets[idx])
+        # create an empty sheet [sheet_name] using old index
+        writer.book.create_sheet(sheet_name, idx)
+    
+    # copy existing sheets
+    writer.sheets = {ws.title:ws for ws in writer.book.worksheets}
+
+    if startrow is None:
+        startrow = 0
+
+    # write out the new sheet
+    df.to_excel(writer, sheet_name, startrow=startrow, **to_excel_kwargs)
+
+    # save the workbook
+    writer.save()
 def get_property_info():
     id = api.id 
     response = requests.post(api.auth_url, data = {
@@ -30,7 +111,6 @@ def get_property_info():
     for i in range(len(list)):
         ls.append(list[i]["pid"])
     return ls
-get_property_info()
 
 def get_property():
     property_id = get_property_info()
@@ -39,7 +119,7 @@ def get_property():
                         'client_id':api.client_id,
                         'client_secret':api.client_secret,
                         'grant_type':'client_credentials',
-                        'scope':api.scopes2,
+                        'scope':api.scopes,
                         'Content-Type':'text/json'
                         })
     json_res = response.json()
@@ -51,21 +131,22 @@ def get_property():
         res1 = requests.get(url, headers=auth)
         r = res1.json()
         d={}
-        d["saleMode"]=r["saleMode"]
+        if r["saleMode"] != 'rent':
+            d["saleMode"]=r["saleMode"]
         d["displayPrice"]=r["priceDetails"]["displayPrice"]
         d["displayAddress"]=r["addressParts"]["displayAddress"]
-        d["streetNumber"] = r["addressParts"]["streetNumber"]
-        d["street"] = r["addressParts"]["street"]
-        d["suburb"] = r["addressParts"]["suburb"]
-        d["postcode"] =r["addressParts"]["postcode"]
+        d["propertyTypes"] = r["propertyTypes"]
+        d["bedrooms"] = r["bedrooms"]
+        d["carspaces"] = r["carspaces"]
         d["bathrooms"] = r["bathrooms"]
+        d["isNewDevelopment"] = r["isNewDevelopment"]
         d["dateListed"] = r["dateListed"]
+        #d["dateListed"] = repr(datetime.fromisoformat(r["dateListed"]))
         d["seoUrl"] = r["seoUrl"]
         ls.append(d)
     df = pd.DataFrame(ls)
-   
-    print(df)
-    
-    timeD=time.strftime("%Y-%m-%d-%H%S",time.localtime())
-    df.to_excel(r'searchaddress/'+timeD+'-searchbyaddress.xlsx', index = False)
-get_property()
+    return df
+    #df.to_excel(r'searchaddress/searchbyaddress.xlsx', index = False)
+    #timeD=time.strftime("%Y-%m-%d-%H%S",time.localtime())
+
+append_df_to_excel("C:/Users/tiff/Documents/GitHub/property_scrape/searchaddress/2.xlsx",get_property())
