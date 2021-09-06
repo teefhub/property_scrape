@@ -4,6 +4,16 @@ import pandas as pd
 import time
 import numpy as np
 import os
+from openpyxl import load_workbook
+import seaborn as sns
+import re
+import pgeocode
+
+pageNumber = 274
+def get_suburb_details():
+    data = pgeocode.Nominatim('AU')
+    details = data.query_postal_code("2117")
+    return suburb
 def append_df_to_excel(filename, df, sheet_name='Sheet1', startrow=None,
                        truncate_sheet=False, 
                        **to_excel_kwargs):
@@ -53,8 +63,8 @@ def append_df_to_excel(filename, df, sheet_name='Sheet1', startrow=None,
 def get_property():
     page = 1
     ls= []
-    url = 'https://www.auhouseprices.com/sold/list/NSW/2127/Wentworth+Point/'
-    for page in range(1, 15):
+    url = 'https://www.auhouseprices.com/sold/list/NSW/2155/Rouse+Hill/'
+    for page in range(1, pageNumber):
         response = requests.get(url=url+str(page))
         c = response.content
         soup = BeautifulSoup(c, "html.parser")
@@ -63,13 +73,14 @@ def get_property():
             d={}
             d["price"]=item.find("span",{"class":"pull-right"}).text
             d["address"]=item.find("h4").text
-            d["bed"]= item.find("big").text
-            d["date"] = item.find("li").text
+            d["date"] = re.findall(r"\d{1,2}\s\w+\s\d{4}",item.find("ul",{"class":"list-unstyled"}).text)
+            d["bed/bath/car"] = re.findall(r"\d{1}\s\d{1}\s\d{1}",item.find("ul",{"class":"list-unstyled"}).text)
+            d["land size"] = re.findall(r"(?<=Land Size:).\w+\s\w+",item.find("ul",{"class":"list-unstyled"}).text)
             ls.append(d)
         page=+1
         
     df = pd.DataFrame(ls)
-    print(df)
     return df
-timeD=time.strftime("%Y-%m-%d-%H-%S",time.localtime())
-append_df_to_excel(timeD+"-get_previous_price.xlsx", get_property())
+#timeD=time.strftime("%Y-%m-%d-%H-%S",time.localtime())
+append_df_to_excel("2021-09-06-22-25-get_previous_price.xlsx", get_property(),"rouse hill")
+#sns.countplot(get_property()['price'])
